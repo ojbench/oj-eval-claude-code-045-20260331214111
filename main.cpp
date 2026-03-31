@@ -4,15 +4,6 @@ using namespace std;
 
 const int MAXN = 500005;
 
-// Simple structure to track requests with a flag
-struct Request {
-    int floor;
-    bool active;
-};
-
-Request requests[MAXN];
-int request_count = 0;
-
 // Min heap for upward requests (smaller floors come first)
 struct MinHeap {
     int arr[MAXN];
@@ -69,10 +60,6 @@ struct MinHeap {
 
     bool empty() {
         return cnt == 0;
-    }
-
-    void clear() {
-        cnt = 0;
     }
 };
 
@@ -133,9 +120,68 @@ struct MaxHeap {
     bool empty() {
         return cnt == 0;
     }
+};
 
-    void clear() {
-        cnt = 0;
+// Simple hash map to track cancelled requests
+struct HashSet {
+    static const int HASH_SIZE = 1000003;
+
+    struct Node {
+        int floor;
+        Node* next;
+    };
+
+    Node* table[HASH_SIZE];
+    Node pool[MAXN];
+    int pool_ptr;
+
+    HashSet() : pool_ptr(0) {
+        for (int i = 0; i < HASH_SIZE; i++) {
+            table[i] = nullptr;
+        }
+    }
+
+    int hash(int x) {
+        return ((x % HASH_SIZE) + HASH_SIZE) % HASH_SIZE;
+    }
+
+    void insert(int x) {
+        int h = hash(x);
+        Node* node = &pool[pool_ptr++];
+        node->floor = x;
+        node->next = table[h];
+        table[h] = node;
+    }
+
+    bool contains(int x) {
+        int h = hash(x);
+        Node* curr = table[h];
+        while (curr != nullptr) {
+            if (curr->floor == x) {
+                return true;
+            }
+            curr = curr->next;
+        }
+        return false;
+    }
+
+    void remove(int x) {
+        int h = hash(x);
+        Node* curr = table[h];
+        Node* prev = nullptr;
+
+        while (curr != nullptr) {
+            if (curr->floor == x) {
+                if (prev == nullptr) {
+                    table[h] = curr->next;
+                } else {
+                    prev->next = curr->next;
+                }
+                return;
+            }
+            prev = curr;
+            curr = curr->next;
+        }
     }
 };
 
@@ -143,27 +189,9 @@ int current_floor = 0;
 bool going_up = true;
 MinHeap up_heap;
 MaxHeap down_heap;
-
-void rebuild_heaps() {
-    up_heap.clear();
-    down_heap.clear();
-
-    for (int i = 0; i < request_count; i++) {
-        if (requests[i].active) {
-            if (requests[i].floor > current_floor) {
-                up_heap.push(requests[i].floor);
-            } else if (requests[i].floor < current_floor) {
-                down_heap.push(requests[i].floor);
-            }
-        }
-    }
-}
+HashSet cancelled;
 
 void add_request(int x) {
-    requests[request_count].floor = x;
-    requests[request_count].active = true;
-    request_count++;
-
     if (x > current_floor) {
         up_heap.push(x);
     } else if (x < current_floor) {
@@ -172,60 +200,54 @@ void add_request(int x) {
 }
 
 void cancel_request(int x) {
-    for (int i = 0; i < request_count; i++) {
-        if (requests[i].active && requests[i].floor == x) {
-            requests[i].active = false;
-            break;
-        }
-    }
-    rebuild_heaps();
+    cancelled.insert(x);
 }
 
 void action() {
     if (going_up) {
+        // Skip cancelled requests
+        while (!up_heap.empty() && cancelled.contains(up_heap.top())) {
+            cancelled.remove(up_heap.top());
+            up_heap.pop();
+        }
+
         if (!up_heap.empty()) {
             current_floor = up_heap.top();
             up_heap.pop();
-            // Remove this request from active list
-            for (int i = 0; i < request_count; i++) {
-                if (requests[i].active && requests[i].floor == current_floor) {
-                    requests[i].active = false;
-                    break;
-                }
+        } else {
+            // Skip cancelled requests in down heap
+            while (!down_heap.empty() && cancelled.contains(down_heap.top())) {
+                cancelled.remove(down_heap.top());
+                down_heap.pop();
             }
-        } else if (!down_heap.empty()) {
-            going_up = false;
-            current_floor = down_heap.top();
-            down_heap.pop();
-            // Remove this request from active list
-            for (int i = 0; i < request_count; i++) {
-                if (requests[i].active && requests[i].floor == current_floor) {
-                    requests[i].active = false;
-                    break;
-                }
+
+            if (!down_heap.empty()) {
+                going_up = false;
+                current_floor = down_heap.top();
+                down_heap.pop();
             }
         }
     } else {
+        // Skip cancelled requests
+        while (!down_heap.empty() && cancelled.contains(down_heap.top())) {
+            cancelled.remove(down_heap.top());
+            down_heap.pop();
+        }
+
         if (!down_heap.empty()) {
             current_floor = down_heap.top();
             down_heap.pop();
-            // Remove this request from active list
-            for (int i = 0; i < request_count; i++) {
-                if (requests[i].active && requests[i].floor == current_floor) {
-                    requests[i].active = false;
-                    break;
-                }
+        } else {
+            // Skip cancelled requests in up heap
+            while (!up_heap.empty() && cancelled.contains(up_heap.top())) {
+                cancelled.remove(up_heap.top());
+                up_heap.pop();
             }
-        } else if (!up_heap.empty()) {
-            going_up = true;
-            current_floor = up_heap.top();
-            up_heap.pop();
-            // Remove this request from active list
-            for (int i = 0; i < request_count; i++) {
-                if (requests[i].active && requests[i].floor == current_floor) {
-                    requests[i].active = false;
-                    break;
-                }
+
+            if (!up_heap.empty()) {
+                going_up = true;
+                current_floor = up_heap.top();
+                up_heap.pop();
             }
         }
     }
